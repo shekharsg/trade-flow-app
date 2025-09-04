@@ -118,37 +118,38 @@ def plot_trade_flow(year_selected, category_selected, crop_selected, source_sele
 # -------------------------
 # Sankey Diagram Function
 # -------------------------
+import plotly.graph_objects as go
 import plotly.colors as pc
-import textwrap
+import numpy as np
 
+# ---------- Export Sankey ----------
 def plot_sankey(df, source_country, year, crop, category, threshold=0.01):
-    if df.empty:
-        st.warning("⚠️ No data for Sankey diagram.")
-        return
-
-    # Sort and filter
-    df_sorted = df.sort_values(by="weight_n", ascending=False)
-    total_trade = df_sorted["weight_n"].sum()
-    df_filtered = df_sorted[df_sorted["weight_n"] > threshold * total_trade]
+    df_filtered = df[
+        (df["Year"] == year) &
+        (df["Category"].str.lower() == category.lower()) &
+        (df["Item"].str.lower() == crop.lower()) &
+        (df["Source_Countries"].str.lower() == source_country.lower())
+    ][["Source_Countries", "Target_Countries", "value_kg_n"]]
 
     if df_filtered.empty:
-        st.warning(f"⚠️ No importers above {threshold*100:.1f}% of trade.")
+        st.warning(f"⚠️ No exports found for {source_country} in {year}.")
         return
 
-    # Alias map for shorter country names
-    alias_map = {
-        "United States of America": "USA",
-        "United Kingdom of Great Britain and Northern Ireland": "UK",
-        "Russian Federation": "Russia",
-        "Republic of Korea": "South Korea",
-        "United Arab Emirates": "UAE",
-        "Iran (Islamic Republic of)": "Iran",
-        "Viet Nam": "Vietnam"
-    }
+    # Aggregate exports
+    df_filtered = df_filtered.groupby(["Source_Countries", "Target_Countries"], as_index=False).sum()
+    df_filtered = df_filtered.rename(columns={
+        "Source_Countries": "source",
+        "Target_Countries": "target",
+        "value_kg_n": "weight_n"
+    })
 
-    # Apply aliases
-    df_filtered["source"] = df_filtered["source"].replace(alias_map)
-    df_filtered["target"] = df_filtered["target"].replace(alias_map)
+    # Apply >1% filter
+    total_trade = df_filtered["weight_n"].sum()
+    df_filtered = df_filtered[df_filtered["weight_n"] > threshold * total_trade]
+
+    if df_filtered.empty:
+        st.warning(f"⚠️ No export partners above {threshold*100:.1f}% of trade.")
+        return
 
     # Nodes
     exporters = df_filtered["source"].unique().tolist()
@@ -159,122 +160,178 @@ def plot_sankey(df, source_country, year, crop, category, threshold=0.01):
     # Colors
     palette = pc.qualitative.Set3 + pc.qualitative.Set2 + pc.qualitative.Pastel1
     target_colors = {imp: palette[i % len(palette)] for i, imp in enumerate(importers)}
-
     node_colors = ["lightgray" if node in exporters else target_colors[node] for node in all_nodes]
 
+    # Flows
     sources = df_filtered["source"].map(node_map)
     targets = df_filtered["target"].map(node_map)
     values = df_filtered["weight_n"]
-
-    # Link colors = target node colors
     link_colors = [target_colors[t] for t in df_filtered["target"]]
 
-    # Node positions
-    # Node positions (closer together to fit page)
+    # Node positions (closer)
     node_x = [0.2 if node in exporters else 0.6 for node in all_nodes]
     node_y = np.linspace(0, 1, len(all_nodes))
 
-    # Sankey diagram (hide default labels)
+    # Sankey diagram
     sankey_fig = go.Figure(data=[go.Sankey(
         arrangement="snap",
         orientation="h",
         node=dict(
-            pad=15,
-            thickness=18,
-            line=dict(color="black", width=1),
+            pad=15, thickness=18,
+            line=dict(color="black", width=1.2),
             label=[""] * len(all_nodes),
             color=node_colors,
-            x=node_x,
-            y=node_y
+            x=node_x, y=node_y
         ),
         link=dict(
-            source=sources,
-            target=targets,
-            value=values,
+            source=sources, target=targets, value=values,
             color=link_colors,
             hovertemplate="%{source.label} → %{target.label}<br>%{value:,.0f} kg N<extra></extra>"
         )
     )])
 
-    # --- Compact outside labels with short names ---
+    # Custom labels
     exporter_total = df_filtered["weight_n"].sum()
     importer_totals = df_filtered.groupby("target")["weight_n"].sum().to_dict()
 
     def short_fmt(val):
-        if val >= 1e6:
-            return f"{val/1e6:.1f}M"
-        elif val >= 1e3:
-            return f"{val/1e3:.1f}k"
-        else:
-            return f"{val:.0f}"
+        if val >= 1e6: return f"{val/1e6:.1f}M"
+        elif val >= 1e3: return f"{val/1e3:.1f}k"
+        else: return f"{val:.0f}"
 
     for i, node in enumerate(all_nodes):
-        x_pos = node_x[i]
-        y_pos = node_y[i]
-        align = "right" if x_pos == 0.0 else "left"
-        offset = -15 if x_pos == 0.0 else 15  # bring text close
-
+        x_pos, y_pos = node_x[i], node_y[i]
+        align = "right" if node in exporters else "left"
+        offset = -15 if node in exporters else 15
         if node in exporters:
             text = f"{node} ({short_fmt(exporter_total)} kg N)"
         else:
-            val = importer_totals.get(node, 0)
-            text = f"{node} ({short_fmt(val)} kg N)"
-
+            text = f"{node} ({short_fmt(importer_totals.get(node,0))} kg N)"
         sankey_fig.add_annotation(
-            x=x_pos, y=y_pos,
-            xshift=offset,
-            text=text,
-            showarrow=False,
+            x=x_pos, y=y_pos, xshift=offset,
+            text=text, showarrow=False,
             font=dict(size=10, color="black"),
-            align=align,
-            xanchor=align,
-            yanchor="middle"
+            align=align, xanchor=align, yanchor="middle"
         )
 
     sankey_fig.update_layout(
-        title_text=f"📊 {source_country}: {crop} ({category}) Exports Sankey ({year}) (Importers >{threshold*100:.0f}% only)",
+        title_text=f"📤 {source_country}: {crop} ({category}) Exports Sankey ({year}) (Importers >{threshold*100:.0f}%)",
         font=dict(size=11, color="black"),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        margin=dict(l=40, r=40, t=50, b=50)
+        plot_bgcolor="white", paper_bgcolor="white",
+        margin=dict(l=50, r=50, t=60, b=50)
     )
 
     st.plotly_chart(sankey_fig, use_container_width=True)
 
 
+# ---------- Import Sankey ----------
+def plot_import_sankey(df, target_country, year, crop, category, threshold=0.01):
+    df_filtered = df[
+        (df["Year"] == year) &
+        (df["Category"].str.lower() == category.lower()) &
+        (df["Item"].str.lower() == crop.lower()) &
+        (df["Target_Countries"].str.lower() == target_country.lower())
+    ][["Source_Countries", "Target_Countries", "value_kg_n"]]
+
+    if df_filtered.empty:
+        st.warning(f"⚠️ No imports found for {target_country} in {year}.")
+        return
+
+    # Aggregate imports
+    df_filtered = df_filtered.groupby(["Source_Countries", "Target_Countries"], as_index=False).sum()
+    df_filtered = df_filtered.rename(columns={
+        "Source_Countries": "source",
+        "Target_Countries": "target",
+        "value_kg_n": "weight_n"
+    })
+
+    # Apply >1% filter
+    total_trade = df_filtered["weight_n"].sum()
+    df_filtered = df_filtered[df_filtered["weight_n"] > threshold * total_trade]
+
+    if df_filtered.empty:
+        st.warning(f"⚠️ No import partners above {threshold*100:.1f}% of trade.")
+        return
+
+    # Nodes
+    exporters = df_filtered["source"].unique().tolist()
+    importers = df_filtered["target"].unique().tolist()
+    all_nodes = exporters + importers
+    node_map = {node: i for i, node in enumerate(all_nodes)}
+
+    # Colors
+    palette = pc.qualitative.Set3 + pc.qualitative.Set2 + pc.qualitative.Pastel1
+    source_colors = {src: palette[i % len(palette)] for i, src in enumerate(exporters)}
+    node_colors = [source_colors[node] if node in exporters else "lightgray" for node in all_nodes]
+
+    # Flows
+    sources = df_filtered["source"].map(node_map)
+    targets = df_filtered["target"].map(node_map)
+    values = df_filtered["weight_n"]
+    link_colors = [source_colors[s] for s in df_filtered["source"]]
+
+    # Node positions
+    node_x = [0.2 if node in exporters else 0.6 for node in all_nodes]
+    node_y = np.linspace(0, 1, len(all_nodes))
+
+    # Sankey
+    sankey_fig = go.Figure(data=[go.Sankey(
+        arrangement="snap",
+        orientation="h",
+        node=dict(
+            pad=15, thickness=18,
+            line=dict(color="black", width=1.2),
+            label=[""] * len(all_nodes),
+            color=node_colors,
+            x=node_x, y=node_y
+        ),
+        link=dict(
+            source=sources, target=targets, value=values,
+            color=link_colors,
+            hovertemplate="%{source.label} → %{target.label}<br>%{value:,.0f} kg N<extra></extra>"
+        )
+    )])
+
+    # Custom labels
+    importer_total = df_filtered["weight_n"].sum()
+    exporter_totals = df_filtered.groupby("source")["weight_n"].sum().to_dict()
+
+    def short_fmt(val):
+        if val >= 1e6: return f"{val/1e6:.1f}M"
+        elif val >= 1e3: return f"{val/1e3:.1f}k"
+        else: return f"{val:.0f}"
+
+    for i, node in enumerate(all_nodes):
+        x_pos, y_pos = node_x[i], node_y[i]
+        align = "right" if node in exporters else "left"
+        offset = -15 if node in exporters else 15
+        if node in exporters:
+            text = f"{node} ({short_fmt(exporter_totals.get(node,0))} kg N)"
+        else:
+            text = f"{node} ({short_fmt(importer_total)} kg N)"
+        sankey_fig.add_annotation(
+            x=x_pos, y=y_pos, xshift=offset,
+            text=text, showarrow=False,
+            font=dict(size=10, color="black"),
+            align=align, xanchor=align, yanchor="middle"
+        )
+
+    sankey_fig.update_layout(
+        title_text=f"📥 {target_country}: {crop} ({category}) Imports Sankey ({year}) (Partners >{threshold*100:.0f}%)",
+        font=dict(size=11, color="black"),
+        plot_bgcolor="white", paper_bgcolor="white",
+        margin=dict(l=50, r=50, t=60, b=50)
+    )
+
+    st.plotly_chart(sankey_fig, use_container_width=True)
 
 
-# -------------------------
-# Sidebar Widgets
-# -------------------------
-st.sidebar.header("Filters")
-year_selected = st.sidebar.selectbox("Year", sorted(trade_df["Year"].unique()), index=0)
-category_selected = st.sidebar.selectbox("Category", sorted(trade_df["Category"].dropna().unique()))
-crop_selected = st.sidebar.selectbox("Crop", sorted(trade_df["Item"].unique()))
-# Exporting country dropdown (default = India if available)
-countries_sorted = sorted(trade_df["Source_Countries"].unique())
-default_index = countries_sorted.index("India") if "India" in countries_sorted else 0
+# ---------- Display both Sankeys ----------
+st.subheader(f"📤 {source_selected}: Export Flows")
+plot_sankey(trade_df, source_selected, year_selected, crop_selected, category_selected)
 
-source_selected = st.sidebar.selectbox("Exporting Country", countries_sorted, index=default_index)
-target_selected = st.sidebar.selectbox("Importing Country", ["All countries"] + sorted(trade_df["Target_Countries"].unique()))
-
-# -------------------------
-# Main Title
-# -------------------------
-st.title("🌍 Virtual N Global Trade Flow")
-
-# -------------------------
-# Run Visualization
-# -------------------------
-result = plot_trade_flow(year_selected, category_selected, crop_selected, source_selected, target_selected)
-
-if result is not None:
-    df_selection, total_raw_kg, total_n_kg = result
-    st.markdown("---")
-    plot_sankey(df_selection, source_selected, year_selected, crop_selected, category_selected)
-
-
-
+st.subheader(f"📥 {source_selected}: Import Flows")
+plot_import_sankey(trade_df, source_selected, year_selected, crop_selected, category_selected)
 
 
 
