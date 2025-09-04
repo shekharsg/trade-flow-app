@@ -27,7 +27,7 @@ trade_df = load_data()
 world = gpd.read_file("shapefiles/ne_110m_admin_0_countries.shp")
 world_proj = world.to_crs(epsg=3857)
 world["coords"] = world_proj.centroid.to_crs(world.crs)
-country_coords = world.set_index("name")["coords"].to_dict()
+country_coords = world.set_index("ADMIN")["coords"].to_dict()
 
 def great_circle_points(src, tgt, npoints=50):
     points = geod.npts(src.x, src.y, tgt.x, tgt.y, npoints)
@@ -111,4 +111,5 @@ target_selected = st.sidebar.selectbox("Importing Country", ["All countries"] + 
 
 st.header("?? Global Trade Flow Explorer")
 plot_trade_flow(year_selected, category_selected, crop_selected, source_selected, target_selected)
+
 
