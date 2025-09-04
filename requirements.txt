@@ -4,3 +4,5 @@ geopandas
 matplotlib
 cartopy
 pyproj
+plotly
+
