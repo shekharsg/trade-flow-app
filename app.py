@@ -333,6 +333,74 @@ plot_sankey(trade_df, source_selected, year_selected, crop_selected, category_se
 st.subheader(f"📥 {source_selected}: Import Flows")
 plot_import_sankey(trade_df, source_selected, year_selected, crop_selected, category_selected)
 
+# -------------------------
+
+
+# Sidebar Widgets
+
+# -------------------------
+
+st.sidebar.header("Filters")
+
+year_selected = st.sidebar.selectbox("Year", sorted(trade_df["Year"].unique()), index=0)
+
+category_selected = st.sidebar.selectbox("Category", sorted(trade_df["Category"].dropna().unique()))
+
+crop_selected = st.sidebar.selectbox("Crop", sorted(trade_df["Item"].unique()))
+
+# Exporting country dropdown (default = India if available)
+
+countries_sorted = sorted(trade_df["Source_Countries"].unique())
+
+default_index = countries_sorted.index("India") if "India" in countries_sorted else 0
+
+
+
+source_selected = st.sidebar.selectbox("Exporting Country", countries_sorted, index=default_index)
+
+target_selected = st.sidebar.selectbox("Importing Country", ["All countries"] + sorted(trade_df["Target_Countries"].unique()))
+
+
+
+# -------------------------
+
+# Main Title
+
+# -------------------------
+
+st.title("🌍 Virtual N Global Trade Flow")
+
+
+
+# -------------------------
+
+# Run Visualization
+
+# -------------------------
+
+result = plot_trade_flow(year_selected, category_selected, crop_selected, source_selected, target_selected)
+
+
+
+if result is not None:
+
+    df_selection, total_raw_kg, total_n_kg = result
+
+    st.markdown("---")
+
+    plot_sankey(df_selection, source_selected, year_selected, crop_selected, category_selected)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
