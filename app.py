@@ -135,6 +135,21 @@ def plot_sankey(df, source_country, year, crop, category, threshold=0.01):
         st.warning(f"⚠️ No importers above {threshold*100:.1f}% of trade.")
         return
 
+    # Alias map for shorter country names
+    alias_map = {
+        "United States of America": "USA",
+        "United Kingdom of Great Britain and Northern Ireland": "UK",
+        "Russian Federation": "Russia",
+        "Republic of Korea": "South Korea",
+        "United Arab Emirates": "UAE",
+        "Iran (Islamic Republic of)": "Iran",
+        "Viet Nam": "Vietnam"
+    }
+
+    # Apply aliases
+    df_filtered["source"] = df_filtered["source"].replace(alias_map)
+    df_filtered["target"] = df_filtered["target"].replace(alias_map)
+
     # Nodes
     exporters = df_filtered["source"].unique().tolist()
     importers = df_filtered["target"].unique().tolist()
@@ -180,7 +195,7 @@ def plot_sankey(df, source_country, year, crop, category, threshold=0.01):
         )
     )])
 
-    # --- Compact labels with trade volumes ---
+    # --- Compact outside labels with short names ---
     exporter_total = df_filtered["weight_n"].sum()
     importer_totals = df_filtered.groupby("target")["weight_n"].sum().to_dict()
 
@@ -196,23 +211,20 @@ def plot_sankey(df, source_country, year, crop, category, threshold=0.01):
         x_pos = node_x[i]
         y_pos = node_y[i]
         align = "right" if x_pos == 0.0 else "left"
-        offset = -20 if x_pos == 0.0 else 20  # pull closer
-
-        # shorten long names
-        label = "<br>".join(textwrap.wrap(node, width=18))
+        offset = -15 if x_pos == 0.0 else 15  # bring text close
 
         if node in exporters:
-            text = f"{label}<br>({short_fmt(exporter_total)} kg N)"
+            text = f"{node} ({short_fmt(exporter_total)} kg N)"
         else:
             val = importer_totals.get(node, 0)
-            text = f"{label}<br>({short_fmt(val)} kg N)"
+            text = f"{node} ({short_fmt(val)} kg N)"
 
         sankey_fig.add_annotation(
             x=x_pos, y=y_pos,
             xshift=offset,
             text=text,
             showarrow=False,
-            font=dict(size=10, color="black"),  # smaller font
+            font=dict(size=10, color="black"),
             align=align,
             xanchor=align,
             yanchor="middle"
@@ -223,11 +235,10 @@ def plot_sankey(df, source_country, year, crop, category, threshold=0.01):
         font=dict(size=11, color="black"),
         plot_bgcolor="white",
         paper_bgcolor="white",
-        margin=dict(l=40, r=40, t=50, b=50)  # tighter margins
+        margin=dict(l=40, r=40, t=50, b=50)
     )
 
     st.plotly_chart(sankey_fig, use_container_width=True)
-
 
 
 
@@ -260,6 +271,7 @@ if result is not None:
     df_selection, total_raw_kg, total_n_kg = result
     st.markdown("---")
     plot_sankey(df_selection, source_selected, year_selected, crop_selected, category_selected)
+
 
 
 
