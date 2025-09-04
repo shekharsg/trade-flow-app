@@ -157,14 +157,14 @@ def plot_sankey(df, source_country, year, crop, category, threshold=0.01):
     node_x = [0.0 if node in exporters else 1.0 for node in all_nodes]
     node_y = np.linspace(0, 1, len(all_nodes))
 
-    # Build Sankey (hide default labels)
+    # Sankey diagram (hide default labels)
     sankey_fig = go.Figure(data=[go.Sankey(
         arrangement="snap",
         orientation="h",
         node=dict(
-            pad=25,
-            thickness=25,
-            line=dict(color="black", width=1.5),
+            pad=20,
+            thickness=20,
+            line=dict(color="black", width=1.2),
             label=[""] * len(all_nodes),
             color=node_colors,
             x=node_x,
@@ -179,30 +179,36 @@ def plot_sankey(df, source_country, year, crop, category, threshold=0.01):
         )
     )])
 
-    # --- Add custom labels outside with volumes ---
-    # Compute totals for annotations
+    # --- Add outside labels with volumes (short format) ---
     exporter_total = df_filtered["weight_n"].sum()
     importer_totals = df_filtered.groupby("target")["weight_n"].sum().to_dict()
+
+    def short_fmt(val):
+        if val >= 1e6:
+            return f"{val/1e6:.1f}M"
+        elif val >= 1e3:
+            return f"{val/1e3:.1f}k"
+        else:
+            return f"{val:.0f}"
 
     for i, node in enumerate(all_nodes):
         x_pos = node_x[i]
         y_pos = node_y[i]
         align = "right" if x_pos == 0.0 else "left"
-        offset = -60 if x_pos == 0.0 else 60
+        offset = -40 if x_pos == 0.0 else 40
 
-        # Assign values
         if node in exporters:
-            text = f"{node} ({exporter_total:,.0f} kg N)"
+            text = f"{node} ({short_fmt(exporter_total)} kg N)"
         else:
             val = importer_totals.get(node, 0)
-            text = f"{node} ({val:,.0f} kg N)"
+            text = f"{node} ({short_fmt(val)} kg N)"
 
         sankey_fig.add_annotation(
             x=x_pos, y=y_pos,
             xshift=offset,
             text=text,
             showarrow=False,
-            font=dict(size=14, color="black"),
+            font=dict(size=12, color="black"),
             align=align,
             xanchor=align,
             yanchor="middle"
@@ -210,13 +216,14 @@ def plot_sankey(df, source_country, year, crop, category, threshold=0.01):
 
     sankey_fig.update_layout(
         title_text=f"📊 {source_country}: {crop} ({category}) Exports Sankey ({year}) (Importers >{threshold*100:.0f}% only)",
-        font=dict(size=14, color="black"),
+        font=dict(size=12, color="black"),
         plot_bgcolor="white",
         paper_bgcolor="white",
-        margin=dict(l=140, r=140, t=80, b=80)
+        margin=dict(l=80, r=80, t=60, b=60)
     )
 
     st.plotly_chart(sankey_fig, use_container_width=True)
+
 
 
 
@@ -250,6 +257,7 @@ if result is not None:
     df_selection, total_raw_kg, total_n_kg = result
     st.markdown("---")
     plot_sankey(df_selection, source_selected, year_selected, crop_selected, category_selected)
+
 
 
 
