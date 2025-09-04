@@ -111,7 +111,7 @@ def plot_trade_flow(year_selected, category_selected, crop_selected, source_sele
     st.pyplot(fig)
 
 # -------------------------
-# Export Sankey
+# Sankey Diagrams
 # -------------------------
 def plot_export_sankey(df, source_country, year, crop, category, threshold=0.01):
     df_filtered = df[
@@ -151,40 +151,29 @@ def plot_export_sankey(df, source_country, year, crop, category, threshold=0.01)
     sankey_fig = go.Figure(data=[go.Sankey(
         arrangement="snap",
         orientation="h",
-        node=dict(pad=15, thickness=18, line=dict(color="black", width=1.2),
-                  label=[""] * len(all_nodes), color=node_colors, x=node_x, y=node_y),
+        node=dict(pad=15, thickness=18, line=dict(color="black", width=1.2), label=[""] * len(all_nodes), color=node_colors, x=node_x, y=node_y),
         link=dict(source=sources, target=targets, value=values, color=link_colors)
     )])
 
     exporter_total = df_filtered["weight_n"].sum()
     importer_totals = df_filtered.groupby("target")["weight_n"].sum().to_dict()
 
-    # Labels placed next to nodes
     for i, node in enumerate(all_nodes):
         x_pos, y_pos = node_x[i], node_y[i]
+        align = "right" if node in exporters else "left"
+        offset = -15 if node in exporters else 15
         if node in exporters:
-            offset, align = 5, "left"
             text = f"{node} ({short_fmt(exporter_total)} kg N)"
         else:
-            offset, align = -5, "right"
             text = f"{node} ({short_fmt(importer_totals.get(node, 0))} kg N)"
+        sankey_fig.add_annotation(x=x_pos, y=y_pos, xshift=offset, text=text,
+                                  showarrow=False, font=dict(size=10, color="black"),
+                                  align=align, xanchor=align, yanchor="middle")
 
-        sankey_fig.add_annotation(
-            x=x_pos, y=y_pos, xshift=offset, text=text,
-            showarrow=False, font=dict(size=10, color="black"),
-            align=align, xanchor=align, yanchor="middle"
-        )
-
-    sankey_fig.update_layout(
-        title_text=f"📤 {source_country}: {crop} ({category}) Exports Sankey ({year})",
-        font=dict(size=11, color="black"),
-        plot_bgcolor="white", paper_bgcolor="white"
-    )
+    sankey_fig.update_layout(title_text=f"📤 {source_country}: {crop} ({category}) Exports Sankey ({year})", font=dict(size=11, color="black"))
     st.plotly_chart(sankey_fig, use_container_width=True)
 
-# -------------------------
-# Import Sankey
-# -------------------------
+
 def plot_import_sankey(df, target_country, year, crop, category, threshold=0.01):
     df_filtered = df[
         (df["Year"] == year) &
@@ -223,35 +212,26 @@ def plot_import_sankey(df, target_country, year, crop, category, threshold=0.01)
     sankey_fig = go.Figure(data=[go.Sankey(
         arrangement="snap",
         orientation="h",
-        node=dict(pad=15, thickness=18, line=dict(color="black", width=1.2),
-                  label=[""] * len(all_nodes), color=node_colors, x=node_x, y=node_y),
+        node=dict(pad=15, thickness=18, line=dict(color="black", width=1.2), label=[""] * len(all_nodes), color=node_colors, x=node_x, y=node_y),
         link=dict(source=sources, target=targets, value=values, color=link_colors)
     )])
 
     importer_total = df_filtered["weight_n"].sum()
     exporter_totals = df_filtered.groupby("source")["weight_n"].sum().to_dict()
 
-    # Labels placed next to nodes
     for i, node in enumerate(all_nodes):
         x_pos, y_pos = node_x[i], node_y[i]
+        align = "right" if node in exporters else "left"
+        offset = -15 if node in exporters else 15
         if node in exporters:
-            offset, align = 5, "left"
             text = f"{node} ({short_fmt(exporter_totals.get(node, 0))} kg N)"
         else:
-            offset, align = -5, "right"
             text = f"{node} ({short_fmt(importer_total)} kg N)"
+        sankey_fig.add_annotation(x=x_pos, y=y_pos, xshift=offset, text=text,
+                                  showarrow=False, font=dict(size=10, color="black"),
+                                  align=align, xanchor=align, yanchor="middle")
 
-        sankey_fig.add_annotation(
-            x=x_pos, y=y_pos, xshift=offset, text=text,
-            showarrow=False, font=dict(size=10, color="black"),
-            align=align, xanchor=align, yanchor="middle"
-        )
-
-    sankey_fig.update_layout(
-        title_text=f"📥 {target_country}: {crop} ({category}) Imports Sankey ({year})",
-        font=dict(size=11, color="black"),
-        plot_bgcolor="white", paper_bgcolor="white"
-    )
+    sankey_fig.update_layout(title_text=f"📥 {target_country}: {crop} ({category}) Imports Sankey ({year})", font=dict(size=11, color="black"))
     st.plotly_chart(sankey_fig, use_container_width=True)
 
 # -------------------------
