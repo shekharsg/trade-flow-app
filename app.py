@@ -170,7 +170,8 @@ def plot_sankey(df, source_country, year, crop, category, threshold=0.01):
     link_colors = [target_colors[t] for t in df_filtered["target"]]
 
     # Node positions
-    node_x = [0.0 if node in exporters else 1.0 for node in all_nodes]
+    # Node positions (closer together to fit page)
+    node_x = [0.2 if node in exporters else 0.6 for node in all_nodes]
     node_y = np.linspace(0, 1, len(all_nodes))
 
     # Sankey diagram (hide default labels)
@@ -271,6 +272,7 @@ if result is not None:
     df_selection, total_raw_kg, total_n_kg = result
     st.markdown("---")
     plot_sankey(df_selection, source_selected, year_selected, crop_selected, category_selected)
+
 
 
 
