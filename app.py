@@ -125,10 +125,8 @@ def plot_sankey(df, source_country, year, crop, category, threshold=0.01):
         st.warning("⚠️ No data for Sankey diagram.")
         return
 
-    # Sort by descending trade
+    # Sort and filter
     df_sorted = df.sort_values(by="weight_n", ascending=False)
-
-    # Keep only importers > threshold share
     total_trade = df_sorted["weight_n"].sum()
     df_filtered = df_sorted[df_sorted["weight_n"] > threshold * total_trade]
 
@@ -142,40 +140,34 @@ def plot_sankey(df, source_country, year, crop, category, threshold=0.01):
     all_nodes = exporters + importers
     node_map = {node: i for i, node in enumerate(all_nodes)}
 
-    # Assign unique colors to target nodes (importers)
+    # Colors
     palette = pc.qualitative.Set3 + pc.qualitative.Set2 + pc.qualitative.Pastel1
     target_colors = {imp: palette[i % len(palette)] for i, imp in enumerate(importers)}
 
-    # Node colors: exporters gray, importers colored
-    node_colors = []
-    for node in all_nodes:
-        if node in exporters:
-            node_colors.append("lightgray")
-        else:
-            node_colors.append(target_colors[node])
+    node_colors = ["lightgray" if node in exporters else target_colors[node] for node in all_nodes]
 
-    # Map flows
     sources = df_filtered["source"].map(node_map)
     targets = df_filtered["target"].map(node_map)
     values = df_filtered["weight_n"]
 
-    # Link colors based on target importer
     link_colors = [target_colors[t] for t in df_filtered["target"]]
 
-    # Node positions: exporters left, importers right
+    # Force exporters left, importers right
     node_x = [0.0 if node in exporters else 1.0 for node in all_nodes]
     node_y = np.linspace(0, 1, len(all_nodes))
 
-    # Build Sankey
+    # Build Sankey (hide default labels by setting label=[])
     sankey_fig = go.Figure(data=[go.Sankey(
         arrangement="snap",
         orientation="h",
         node=dict(
             pad=25,
             thickness=25,
-            line=dict(color="black", width=1.5),  # black borders
-            label=all_nodes,
-            color=node_colors
+            line=dict(color="black", width=1.5),
+            label=[""] * len(all_nodes),  # hide default labels
+            color=node_colors,
+            x=node_x,
+            y=node_y
         ),
         link=dict(
             source=sources,
@@ -186,15 +178,34 @@ def plot_sankey(df, source_country, year, crop, category, threshold=0.01):
         )
     )])
 
+    # Add manual labels outside nodes
+    for i, node in enumerate(all_nodes):
+        x_pos = node_x[i]
+        y_pos = node_y[i]
+        align = "right" if x_pos == 0.0 else "left"  # left side for exporters, right for importers
+        offset = -40 if x_pos == 0.0 else 40  # push labels outside the boxes
+
+        sankey_fig.add_annotation(
+            x=x_pos, y=y_pos,
+            xshift=offset,
+            text=node,
+            showarrow=False,
+            font=dict(size=14, color="black"),
+            align=align,
+            xanchor=align,
+            yanchor="middle"
+        )
+
     sankey_fig.update_layout(
         title_text=f"📊 {source_country}: {crop} ({category}) Exports Sankey ({year}) (Importers >{threshold*100:.0f}% only)",
         font=dict(size=14, color="black"),
         plot_bgcolor="white",
         paper_bgcolor="white",
-        margin=dict(l=100, r=100, t=60, b=60)
+        margin=dict(l=120, r=120, t=80, b=80)
     )
 
     st.plotly_chart(sankey_fig, use_container_width=True)
+
 
 
 
@@ -226,6 +237,7 @@ if result is not None:
     df_selection, total_raw_kg, total_n_kg = result
     st.markdown("---")
     plot_sankey(df_selection, source_selected, year_selected, crop_selected, category_selected)
+
 
 
 
