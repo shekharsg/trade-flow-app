@@ -43,30 +43,40 @@ def plot_trade_flow(year_selected, category_selected, crop_selected, source_sele
         (trade_df["Category"].str.lower() == category_selected.lower()) &
         (trade_df["Item"].str.lower() == crop_selected.lower()) &
         (trade_df["Source_Countries"].str.lower() == source_selected.lower())
-    ][["Source_Countries", "Target_Countries", "value_kg_n"]]
+    ][["Source_Countries", "Target_Countries", "value_kg_n", "value_tonne_raw"]]
 
     if target_selected != "All countries":
         df = df[df["Target_Countries"].str.lower() == target_selected.lower()]
 
-    df = df.groupby(["Source_Countries", "Target_Countries"], as_index=False)["value_kg_n"].sum()
-    df = df.rename(columns={"Source_Countries": "source",
-                            "Target_Countries": "target",
-                            "value_kg_n": "weight"})
+    df = df.groupby(["Source_Countries", "Target_Countries"], as_index=False).sum()
+
+    df = df.rename(columns={
+        "Source_Countries": "source",
+        "Target_Countries": "target",
+        "value_kg_n": "weight_n",
+        "value_tonne_raw": "weight_raw"
+    })
 
     if df.empty:
         st.warning("⚠️ No trade data found for this selection.")
         return None
 
-    df = df[df["weight"] > 0]
-    df["log_weight"] = np.log10(df["weight"] + 1)
+    # Remove zeros
+    df = df[(df["weight_n"] > 0) & (df["weight_raw"] > 0)]
+    df["log_weight"] = np.log10(df["weight_n"] + 1)
 
-    # Total trade volume
-    total_trade = df["weight"].sum()
-    st.subheader(f"📦 Total Trade Volume: {total_trade:,.0f} kg N")
+    # Totals
+    total_raw_kg = df["weight_raw"].sum() * 1000  # tonne → kg
+    total_n_kg = df["weight_n"].sum()
 
+    st.subheader(f"📦 Total Physical Trade Volume: {total_raw_kg:,.0f} kg")
+    st.subheader(f"🧪 Total Virtual N Trade Volume: {total_n_kg:,.0f} kg N")
+
+    # Colors
     norm = plt.Normalize(vmin=df["log_weight"].min(), vmax=df["log_weight"].max())
     cmap = plt.colormaps.get_cmap("Spectral_r")
 
+    # Plot map
     fig = plt.figure(figsize=(14, 7))
     ax = plt.axes(projection=ccrs.Robinson())
     ax.set_global()
@@ -98,13 +108,12 @@ def plot_trade_flow(year_selected, category_selected, crop_selected, source_sele
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
     cbar = plt.colorbar(sm, orientation="vertical", shrink=0.5, ax=ax)
-    cbar.set_label("Log-scaled Trade Flow (kg N)")
+    cbar.set_label("Log-scaled Virtual N Flow (kg N)")
 
     plt.title(f"{source_selected}: {crop_selected} ({category_selected}) Exports ({year_selected})", fontsize=14)
-
     st.pyplot(fig)
 
-    return df
+    return df, total_raw_kg, total_n_kg
 
 # -------------------------
 # Sankey Diagram Function
@@ -114,32 +123,34 @@ def plot_sankey(df, source_country, year, crop, category):
         st.warning("⚠️ No data for Sankey diagram.")
         return
 
-    # Build unique node list
     all_nodes = list(set(df["source"].tolist() + df["target"].tolist()))
     node_map = {node: i for i, node in enumerate(all_nodes)}
 
     sources = df["source"].map(node_map)
     targets = df["target"].map(node_map)
-    values = df["weight"]
+    values = df["weight_n"]
 
     sankey_fig = go.Figure(data=[go.Sankey(
         node=dict(
-            pad=15,
-            thickness=20,
+            pad=20,
+            thickness=25,
             line=dict(color="black", width=0.5),
             label=all_nodes,
-            color="lightblue"
+            color="rgba(0,100,200,0.6)"
         ),
         link=dict(
             source=sources,
             target=targets,
-            value=values
+            value=values,
+            color="rgba(200,100,0,0.4)"
         )
     )])
 
     sankey_fig.update_layout(
         title_text=f"{source_country}: {crop} ({category}) Exports Sankey ({year})",
-        font_size=12
+        font=dict(size=12, color="black"),
+        plot_bgcolor="white",
+        paper_bgcolor="white"
     )
 
     st.plotly_chart(sankey_fig, use_container_width=True)
@@ -162,8 +173,9 @@ st.title("🌍 Virtual N Global Trade Flow")
 # -------------------------
 # Run Visualization
 # -------------------------
-df_selection = plot_trade_flow(year_selected, category_selected, crop_selected, source_selected, target_selected)
+result = plot_trade_flow(year_selected, category_selected, crop_selected, source_selected, target_selected)
 
-if df_selection is not None:
+if result is not None:
+    df_selection, total_raw_kg, total_n_kg = result
     st.markdown("---")
     plot_sankey(df_selection, source_selected, year_selected, crop_selected, category_selected)
