@@ -131,26 +131,29 @@ def plot_sankey(df, source_country, year, crop, category):
     values = df["weight_n"]
 
     sankey_fig = go.Figure(data=[go.Sankey(
+        arrangement="snap",   # better spacing
+        orientation="h",      # horizontal flow
         node=dict(
-            pad=20,
-            thickness=25,
-            line=dict(color="black", width=0.5),
+            pad=25,
+            thickness=30,
+            line=dict(color="black", width=0.8),
             label=all_nodes,
-            color="rgba(0,100,200,0.6)"
+            color="rgba(31, 119, 180, 0.8)"  # professional blue nodes
         ),
         link=dict(
             source=sources,
             target=targets,
             value=values,
-            color="rgba(200,100,0,0.4)"
+            color="rgba(255, 127, 14, 0.5)"  # orange semi-transparent links
         )
     )])
 
     sankey_fig.update_layout(
-        title_text=f"{source_country}: {crop} ({category}) Exports Sankey ({year})",
-        font=dict(size=12, color="black"),
+        title_text=f"📊 {source_country}: {crop} ({category}) Exports Sankey ({year})",
+        font=dict(size=14, color="black"),
         plot_bgcolor="white",
-        paper_bgcolor="white"
+        paper_bgcolor="white",
+        margin=dict(l=50, r=50, t=50, b=50)
     )
 
     st.plotly_chart(sankey_fig, use_container_width=True)
@@ -162,7 +165,11 @@ st.sidebar.header("Filters")
 year_selected = st.sidebar.selectbox("Year", sorted(trade_df["Year"].unique()), index=0)
 category_selected = st.sidebar.selectbox("Category", sorted(trade_df["Category"].dropna().unique()))
 crop_selected = st.sidebar.selectbox("Crop", sorted(trade_df["Item"].unique()))
-source_selected = st.sidebar.selectbox("Exporting Country", sorted(trade_df["Source_Countries"].unique()), index=0)
+# Exporting country dropdown (default = India if available)
+countries_sorted = sorted(trade_df["Source_Countries"].unique())
+default_index = countries_sorted.index("India") if "India" in countries_sorted else 0
+
+source_selected = st.sidebar.selectbox("Exporting Country", countries_sorted, index=default_index)
 target_selected = st.sidebar.selectbox("Importing Country", ["All countries"] + sorted(trade_df["Target_Countries"].unique()))
 
 # -------------------------
@@ -179,3 +186,4 @@ if result is not None:
     df_selection, total_raw_kg, total_n_kg = result
     st.markdown("---")
     plot_sankey(df_selection, source_selected, year_selected, crop_selected, category_selected)
+
