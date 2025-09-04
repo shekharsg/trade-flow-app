@@ -228,7 +228,6 @@ def plot_sankey(df, source_country, year, crop, category, threshold=0.01):
 
 
 
-
 # -------------------------
 # Sidebar Widgets
 # -------------------------
@@ -257,6 +256,7 @@ if result is not None:
     df_selection, total_raw_kg, total_n_kg = result
     st.markdown("---")
     plot_sankey(df_selection, source_selected, year_selected, crop_selected, category_selected)
+
 
 
 
