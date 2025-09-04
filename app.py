@@ -6,6 +6,7 @@ import pandas as pd
 from pyproj import Geod
 import numpy as np
 import streamlit as st
+import plotly.graph_objects as go
 
 # -------------------------
 # Helper function: great-circle route
@@ -14,9 +15,7 @@ geod = Geod(ellps="WGS84")
 
 @st.cache_data
 def load_data():
-    trade_df = pd.read_csv(
-        "data/exp_import_max_value_n_ton.csv"  # keep data in a "data" folder
-    )
+    trade_df = pd.read_csv("data/exp_import_max_value_n_ton.csv")
     return trade_df
 
 trade_df = load_data()
@@ -36,7 +35,7 @@ def great_circle_points(src, tgt, npoints=50):
     return lons, lats
 
 # -------------------------
-# Plotting function
+# Map Plotting Function
 # -------------------------
 def plot_trade_flow(year_selected, category_selected, crop_selected, source_selected, target_selected):
     df = trade_df[
@@ -50,14 +49,20 @@ def plot_trade_flow(year_selected, category_selected, crop_selected, source_sele
         df = df[df["Target_Countries"].str.lower() == target_selected.lower()]
 
     df = df.groupby(["Source_Countries", "Target_Countries"], as_index=False)["value_kg_n"].sum()
-    df = df.rename(columns={"Source_Countries": "source", "Target_Countries": "target", "value_kg_n": "weight"})
+    df = df.rename(columns={"Source_Countries": "source",
+                            "Target_Countries": "target",
+                            "value_kg_n": "weight"})
 
     if df.empty:
-        st.warning("?? No trade data found for this selection.")
-        return
+        st.warning("⚠️ No trade data found for this selection.")
+        return None
 
     df = df[df["weight"] > 0]
     df["log_weight"] = np.log10(df["weight"] + 1)
+
+    # Total trade volume
+    total_trade = df["weight"].sum()
+    st.subheader(f"📦 Total Trade Volume: {total_trade:,.0f} kg N")
 
     norm = plt.Normalize(vmin=df["log_weight"].min(), vmax=df["log_weight"].max())
     cmap = plt.colormaps.get_cmap("Spectral_r")
@@ -99,8 +104,48 @@ def plot_trade_flow(year_selected, category_selected, crop_selected, source_sele
 
     st.pyplot(fig)
 
+    return df
+
 # -------------------------
-# Sidebar widgets
+# Sankey Diagram Function
+# -------------------------
+def plot_sankey(df, source_country, year, crop, category):
+    if df.empty:
+        st.warning("⚠️ No data for Sankey diagram.")
+        return
+
+    # Build unique node list
+    all_nodes = list(set(df["source"].tolist() + df["target"].tolist()))
+    node_map = {node: i for i, node in enumerate(all_nodes)}
+
+    sources = df["source"].map(node_map)
+    targets = df["target"].map(node_map)
+    values = df["weight"]
+
+    sankey_fig = go.Figure(data=[go.Sankey(
+        node=dict(
+            pad=15,
+            thickness=20,
+            line=dict(color="black", width=0.5),
+            label=all_nodes,
+            color="lightblue"
+        ),
+        link=dict(
+            source=sources,
+            target=targets,
+            value=values
+        )
+    )])
+
+    sankey_fig.update_layout(
+        title_text=f"{source_country}: {crop} ({category}) Exports Sankey ({year})",
+        font_size=12
+    )
+
+    st.plotly_chart(sankey_fig, use_container_width=True)
+
+# -------------------------
+# Sidebar Widgets
 # -------------------------
 st.sidebar.header("Filters")
 year_selected = st.sidebar.selectbox("Year", sorted(trade_df["Year"].unique()), index=0)
@@ -109,7 +154,16 @@ crop_selected = st.sidebar.selectbox("Crop", sorted(trade_df["Item"].unique()))
 source_selected = st.sidebar.selectbox("Exporting Country", sorted(trade_df["Source_Countries"].unique()), index=0)
 target_selected = st.sidebar.selectbox("Importing Country", ["All countries"] + sorted(trade_df["Target_Countries"].unique()))
 
-st.header("?? Global Trade Flow Explorer")
-plot_trade_flow(year_selected, category_selected, crop_selected, source_selected, target_selected)
+# -------------------------
+# Main Title
+# -------------------------
+st.title("🌍 Virtual N Global Trade Flow")
 
+# -------------------------
+# Run Visualization
+# -------------------------
+df_selection = plot_trade_flow(year_selected, category_selected, crop_selected, source_selected, target_selected)
 
+if df_selection is not None:
+    st.markdown("---")
+    plot_sankey(df_selection, source_selected, year_selected, crop_selected, category_selected)
