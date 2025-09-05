@@ -13,7 +13,7 @@ import plotly.colors as pc
 # Great-circle setup
 # -------------------------
 geod = Geod(ellps="WGS84")
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_data():
     trade_df = pd.read_csv("data/exp_import_max_value_n_ton.csv")
     return trade_df
@@ -33,7 +33,7 @@ def great_circle_points(src, tgt, npoints=50):
     return lons, lats
 
 # -------------------------
-# Short format
+# Short format helper
 # -------------------------
 def short_fmt(val):
     if val >= 1e6:
@@ -44,17 +44,17 @@ def short_fmt(val):
         return f"{val:.0f}"
 
 # -------------------------
-# Map Plot
+# Map Plot Function
 # -------------------------
-def plot_trade_flow(year_selected, category_selected, crop_selected, source_selected, target_selected):
+def plot_trade_flow(year, category, crop, source, target):
     df = trade_df[
-        (trade_df["Year"] == year_selected) &
-        (trade_df["Category"].str.lower() == category_selected.lower()) &
-        (trade_df["Item"].str.lower() == crop_selected.lower()) &
-        (trade_df["Source_Countries"].str.lower() == source_selected.lower())
+        (trade_df["Year"] == year) &
+        (trade_df["Category"].str.lower() == category.lower()) &
+        (trade_df["Item"].str.lower() == crop.lower()) &
+        (trade_df["Source_Countries"].str.lower() == source.lower())
     ][["Source_Countries", "Target_Countries", "value_kg_n"]]
-    if target_selected != "All countries":
-        df = df[df["Target_Countries"].str.lower() == target_selected.lower()]
+    if target != "All countries":
+        df = df[df["Target_Countries"].str.lower() == target.lower()]
     df = df.groupby(["Source_Countries", "Target_Countries"], as_index=False)["value_kg_n"].sum()
     df = df.rename(columns={"Source_Countries": "source", "Target_Countries": "target", "value_kg_n": "weight"})
     if df.empty:
@@ -78,49 +78,71 @@ def plot_trade_flow(year_selected, category_selected, crop_selected, source_sele
             arc_x, arc_y = great_circle_points(src, tgt, npoints=50)
             color = cmap(norm(row["log_weight"]))
             lw = 0.5 + 2.5 * (row["log_weight"] / df["log_weight"].max())
-            ax.plot(arc_x, arc_y, transform=ccrs.Geodetic(),
-                    color=color, linewidth=lw, alpha=0.8)
-            idx = int(len(arc_x) * 0.7)
-            ax.annotate("",
-                        xy=(arc_x[idx], arc_y[idx]),
-                        xycoords=ccrs.Geodetic()._as_mpl_transform(ax),
-                        xytext=(arc_x[idx-1], arc_y[idx-1]),
-                        textcoords=ccrs.Geodetic()._as_mpl_transform(ax),
+            ax.plot(arc_x, arc_y, transform=ccrs.Geodetic(), color=color, linewidth=lw, alpha=0.8)
+            idx = int(len(arc_x)*0.7)
+            ax.annotate("", xy=(arc_x[idx], arc_y[idx]), xycoords=ccrs.Geodetic()._as_mpl_transform(ax),
+                        xytext=(arc_x[idx-1], arc_y[idx-1]), textcoords=ccrs.Geodetic()._as_mpl_transform(ax),
                         arrowprops=dict(arrowstyle="->", color=color, lw=lw))
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
     cbar = plt.colorbar(sm, orientation="vertical", shrink=0.5, ax=ax)
     cbar.set_label("Log-scaled Trade Flow (kg N)")
-    plt.title(f"{source_selected}: {crop_selected} ({category_selected}) Exports ({year_selected})", fontsize=13)
+    plt.title(f"{source}: {crop} ({category}) Exports ({year})", fontsize=13)
     st.pyplot(fig)
 
 # -------------------------
-# Sankey Export
+# Interactive Sankey function
 # -------------------------
-def plot_export_sankey(df, source_country, year, crop, category, threshold=0.01):
-    df_filtered = df[
-        (df["Year"] == year) &
-        (df["Category"].str.lower() == category.lower()) &
-        (df["Item"].str.lower() == crop.lower()) &
-        (df["Source_Countries"].str.lower() == source_country.lower())
-    ][["Source_Countries", "Target_Countries", "value_kg_n"]]
+def plot_sankey(df, country, year, crop, category, threshold, flow_type="export", palette_choice="Set3"):
+    # Filter data according to flow type
+    if flow_type == "export":
+        df_filtered = df[
+            (df["Year"] == year) & 
+            (df["Category"].str.lower() == category.lower()) & 
+            (df["Item"].str.lower() == crop.lower()) & 
+            (df["Source_Countries"].str.lower() == country.lower())
+        ][["Source_Countries", "Target_Countries", "value_kg_n"]]
+    else:
+        df_filtered = df[
+            (df["Year"] == year) & 
+            (df["Category"].str.lower() == category.lower()) & 
+            (df["Item"].str.lower() == crop.lower()) & 
+            (df["Target_Countries"].str.lower() == country.lower())
+        ][["Source_Countries", "Target_Countries", "value_kg_n"]]
+
     if df_filtered.empty:
-        st.warning(f"⚠️ No exports found for {source_country} in {year}.")
+        st.warning(f"⚠️ No {'exports' if flow_type=='export' else 'imports'} found for {country} in {year}.")
         return
+
     df_filtered = df_filtered.groupby(["Source_Countries", "Target_Countries"], as_index=False).sum()
-    df_filtered = df_filtered.rename(columns={"Source_Countries": "source",
-                                              "Target_Countries": "target",
-                                              "value_kg_n": "weight_n"})
+    df_filtered = df_filtered.rename(columns={
+        "Source_Countries": "source", "Target_Countries": "target", "value_kg_n": "weight_n"})
+
     total_trade = df_filtered["weight_n"].sum()
     df_filtered = df_filtered[df_filtered["weight_n"] > threshold * total_trade]
+
     exporters = df_filtered["source"].unique().tolist()
     importers = df_filtered["target"].unique().tolist()
     all_nodes = exporters + importers
     node_map = {node: i for i, node in enumerate(all_nodes)}
-    palette = pc.qualitative.Set3 + pc.qualitative.Set2 + pc.qualitative.Pastel1
-    target_colors = {imp: palette[i % len(palette)] for i, imp in enumerate(importers)}
-    node_colors = ["#636efa" if node in exporters else target_colors[node] for node in all_nodes]
-    link_colors = [target_colors[t] for t in df_filtered["target"]]
+    
+    # Select color palette interactively
+    palettes = {
+        "Set3": pc.qualitative.Set3,
+        "Dark2": pc.qualitative.Dark2,
+        "Pastel1": pc.qualitative.Pastel1,
+    }
+    selected_palette = palettes.get(palette_choice, pc.qualitative.Set3)
+    
+    if flow_type == "export":
+        target_colors = {imp: selected_palette[i % len(selected_palette)] for i, imp in enumerate(importers)}
+        node_colors = ["#636efa" if node in exporters else target_colors[node] for node in all_nodes]
+        link_colors = [target_colors[t] for t in df_filtered["target"]]
+    else:
+        source_colors = {src: selected_palette[i % len(selected_palette)] for i, src in enumerate(exporters)}
+        node_colors = [source_colors[node] if node in exporters else "#0ed6c1" for node in all_nodes]
+        link_colors = [source_colors[s] for s in df_filtered["source"]]
+
     sources = df_filtered["source"].map(node_map)
     targets = df_filtered["target"].map(node_map)
     values = df_filtered["weight_n"]
@@ -130,130 +152,96 @@ def plot_export_sankey(df, source_country, year, crop, category, threshold=0.01)
         node=dict(
             pad=24, thickness=20, line=dict(color="#333", width=1.7),
             label=[f"{node}" for node in all_nodes],
-            color=node_colors
+            color=node_colors,
+            hovertemplate='%{label}<extra></extra>'
         ),
         link=dict(
             source=sources, target=targets, value=values, color=link_colors,
-            hovertemplate=(
-                '<b>Exporter:</b> %{source.label}<br>'+
-                '<b>Importer:</b> %{target.label}<br>'+
-                '<b>Value:</b> %{value:,.0f} kg N<br>'+
-                f'<b>Year:</b> {year}<br><b>Crop:</b> {crop}<br><b>Category:</b> {category}'
-            ),
+            hovertemplate=('<b>Exporter:</b> %{source.label}<br>' +
+                           '<b>Importer:</b> %{target.label}<br>' +
+                           '<b>Value:</b> %{value:,.0f} kg N<br>' +
+                           f'<b>Year:</b> {year}<br><b>Crop:</b> {crop}<br><b>Category:</b> {category}<extra></extra>')
         )
     )])
-    # Clean external value annotation
-    exporter_total = df_filtered["weight_n"].sum()
-    importer_totals = df_filtered.groupby("target")["weight_n"].sum().to_dict()
+
+    # Add node value annotations outside for clarity (avoiding overlap)
+    totals = df_filtered.groupby('target' if flow_type=="export" else 'source').weight_n.sum().to_dict()
     for i, node in enumerate(all_nodes):
-        y = None  # Let Plotly auto-place annotation vertically at node center
-        if node in exporters:
-            x, align, text = 0, "left", f"{node} ({short_fmt(exporter_total)} kg N)"
+        if flow_type == "export":
+            if node in exporters:
+                continue  # skip exporter labels collide with node label itself
+            x, align = 1.05, "left"
         else:
-            x, align, text = 1, "right", f"{node} ({short_fmt(importer_totals.get(node, 0))} kg N)"
+            if node in importers:
+                continue  # skip importer labels collide with node label itself
+            x, align = -0.05, "right"
         sankey_fig.add_annotation(
-            x=x, y=None, text=text, showarrow=False,
-            font=dict(size=15, color="#111"),
+            x=x, y=None, text=f"{node}: {short_fmt(totals.get(node, 0))} kg N",
+            showarrow=False, font=dict(size=13, color="#111"),
             align=align, xanchor=align, yanchor="middle",
             xref="paper", yref="paper"
         )
+
+    flow_label = "Exports" if flow_type == "export" else "Imports"
     sankey_fig.update_layout(
-        title_text=f"<b>📤 {source_country}: {crop} ({category}) Exports Sankey {year}</b>",
+        title_text=f"📊 {country}: {crop} ({category}) {flow_label} Sankey {year}",
         font=dict(family="Open Sans, Arial", size=14, color="#222"),
         plot_bgcolor="#fff", paper_bgcolor="#fff",
-        margin=dict(l=20, r=20, t=60, b=40), height=600
+        margin=dict(l=20, r=80, t=60, b=40), height=600
     )
     st.plotly_chart(sankey_fig, use_container_width=True)
 
-# -------------------------
-# Sankey Import
-# -------------------------
-def plot_import_sankey(df, target_country, year, crop, category, threshold=0.01):
-    df_filtered = df[
-        (df["Year"] == year) &
-        (df["Category"].str.lower() == category.lower()) &
-        (df["Item"].str.lower() == crop.lower()) &
-        (df["Target_Countries"].str.lower() == target_country.lower())
-    ][["Source_Countries", "Target_Countries", "value_kg_n"]]
-    if df_filtered.empty:
-        st.warning(f"⚠️ No imports found for {target_country} in {year}.")
-        return
-    df_filtered = df_filtered.groupby(["Source_Countries", "Target_Countries"], as_index=False).sum()
-    df_filtered = df_filtered.rename(columns={"Source_Countries": "source",
-                                              "Target_Countries": "target",
-                                              "value_kg_n": "weight_n"})
-    total_trade = df_filtered["weight_n"].sum()
-    df_filtered = df_filtered[df_filtered["weight_n"] > threshold * total_trade]
-    exporters = df_filtered["source"].unique().tolist()
-    importers = df_filtered["target"].unique().tolist()
-    all_nodes = exporters + importers
-    node_map = {node: i for i, node in enumerate(all_nodes)}
-    palette = pc.qualitative.Set3 + pc.qualitative.Set2 + pc.qualitative.Pastel1
-    source_colors = {src: palette[i % len(palette)] for i, src in enumerate(exporters)}
-    node_colors = [source_colors[node] if node in exporters else "#0ed6c1" for node in all_nodes]
-    link_colors = [source_colors[s] for s in df_filtered["source"]]
-    sources = df_filtered["source"].map(node_map)
-    targets = df_filtered["target"].map(node_map)
-    values = df_filtered["weight_n"]
 
-    sankey_fig = go.Figure(data=[go.Sankey(
-        arrangement="snap", orientation="h",
-        node=dict(
-            pad=24, thickness=20, line=dict(color="#333", width=1.7),
-            label=[f"{node}" for node in all_nodes],
-            color=node_colors
-        ),
-        link=dict(
-            source=sources, target=targets, value=values, color=link_colors,
-            hovertemplate=(
-                '<b>Exporter:</b> %{source.label}<br>'+
-                '<b>Importer:</b> %{target.label}<br>'+
-                '<b>Value:</b> %{value:,.0f} kg N<br>'+
-                f'<b>Year:</b> {year}<br><b>Crop:</b> {crop}<br><b>Category:</b> {category}'
-            ),
-        )
-    )])
-    # Clean external value annotation
-    importer_total = df_filtered["weight_n"].sum()
-    exporter_totals = df_filtered.groupby("source")["weight_n"].sum().to_dict()
-    for i, node in enumerate(all_nodes):
-        y = None
-        if node in exporters:
-            x, align, text = 0, "left", f"{node} ({short_fmt(exporter_totals.get(node, 0))} kg N)"
-        else:
-            x, align, text = 1, "right", f"{node} ({short_fmt(importer_total)} kg N)"
-        sankey_fig.add_annotation(
-            x=x, y=None, text=text, showarrow=False,
-            font=dict(size=15, color="#111"),
-            align=align, xanchor=align, yanchor="middle",
-            xref="paper", yref="paper"
-        )
-    sankey_fig.update_layout(
-        title_text=f"<b>📥 {target_country}: {crop} ({category}) Imports Sankey {year}</b>",
-        font=dict(family="Open Sans, Arial", size=14, color="#222"),
-        plot_bgcolor="#fff", paper_bgcolor="#fff",
-        margin=dict(l=20, r=20, t=60, b=40), height=600
+# -------------------------
+# Sidebar - Improved interactive filters
+# -------------------------
+st.sidebar.header("Filter & Customize Your View")
+
+year_selected = st.sidebar.slider("Select Year", min_value=int(trade_df["Year"].min()),
+                                  max_value=int(trade_df["Year"].max()), value=int(trade_df["Year"].max()),
+                                  step=1, format="%d")
+
+category_selected = st.sidebar.selectbox("Select Category", sorted(trade_df["Category"].dropna().unique()))
+
+crop_selected = st.sidebar.selectbox("Select Crop", sorted(trade_df["Item"].unique()))
+
+# Country search instead of dropdown (fun and user-friendly)
+country_search = st.sidebar.text_input("Search Source Country (case-insensitive)", "India")
+countries_lower = [c.lower() for c in trade_df["Source_Countries"].unique()]
+if country_search.strip().lower() in countries_lower:
+    source_selected = trade_df["Source_Countries"].unique()[countries_lower.index(country_search.strip().lower())]
+else:
+    source_selected = "India"
+
+target_selected = st.sidebar.selectbox("Select Importing Country", ["All countries"] + sorted(trade_df["Target_Countries"].unique()))
+
+threshold = st.sidebar.slider("Minimum trade flow fraction (filter small flows)", 0.0, 0.1, 0.01, 0.005)
+
+pal_choice = st.sidebar.radio("Choose Sankey Color Palette",
+                             ("Set3", "Dark2", "Pastel1"),
+                             index=0,
+                             help="Change Sankey color scheme for better visuals")
+
+st.sidebar.markdown("---")
+with st.sidebar.expander("ℹ️ About this dashboard"):
+    st.markdown(
+        """
+        This interactive dashboard visualizes nitrogen trade flows globally.
+        - Use sliders and search inputs to explore trade by year, crop, and countries.
+        - Sankey diagrams disclose top export/import flows by volume.
+        - Hover on flows and nodes for detailed trade info.
+        """
     )
-    st.plotly_chart(sankey_fig, use_container_width=True)
 
 # -------------------------
-# Sidebar
+# Main page visualization
 # -------------------------
-st.sidebar.header("Filters")
-year_selected = st.sidebar.selectbox("Year", sorted(trade_df["Year"].unique()), index=0)
-category_selected = st.sidebar.selectbox("Category", sorted(trade_df["Category"].dropna().unique()))
-crop_selected = st.sidebar.selectbox("Crop", sorted(trade_df["Item"].unique()))
-countries_sorted = sorted(trade_df["Source_Countries"].unique())
-default_index = countries_sorted.index("India") if "India" in countries_sorted else 0
-source_selected = st.sidebar.selectbox("Country", countries_sorted, index=default_index)
-target_selected = st.sidebar.selectbox("Importing Country", ["All countries"] + sorted(trade_df["Target_Countries"].unique()))
+st.title("🌍 Virtual N Global Trade Flow Explorer")
 
-# -------------------------
-# Main Page
-# -------------------------
-st.header("🌍 Virtual N Global Trade Flow")
 plot_trade_flow(year_selected, category_selected, crop_selected, source_selected, target_selected)
-st.subheader("📤 Export Flows")
-plot_export_sankey(trade_df, source_selected, year_selected, crop_selected, category_selected)
-st.subheader("📥 Import Flows")
-plot_import_sankey(trade_df, source_selected, year_selected, crop_selected, category_selected)
+
+st.header("📤 Export Flows Sankey")
+plot_sankey(trade_df, source_selected, year_selected, crop_selected, category_selected, threshold, flow_type="export", palette_choice=pal_choice)
+
+st.header("📥 Import Flows Sankey")
+plot_sankey(trade_df, source_selected, year_selected, crop_selected, category_selected, threshold, flow_type="import", palette_choice=pal_choice)
