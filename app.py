@@ -244,8 +244,10 @@ st.header("📤 Export Flows Sankey")
 plot_sankey(trade_df, source_selected, year_selected, crop_selected, category_selected, threshold, flow_type="export", palette_choice=pal_choice)
 
 st.header("🗺️ Import Flows Map")
-if target_selected != "All countries":
-    plot_trade_flow(year_selected, category_selected, crop_selected, target_selected, flow_type="import", partner=source_selected)
+plot_trade_flow(year_selected, category_selected, crop_selected,
+                target_selected if target_selected != "All countries" else source_selected,
+                flow_type="import")
 
 st.header("📥 Import Flows Sankey")
 plot_sankey(trade_df, source_selected, year_selected, crop_selected, category_selected, threshold, flow_type="import", palette_choice=pal_choice)
+
