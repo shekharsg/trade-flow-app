@@ -9,7 +9,9 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.colors as pc
 
+# -------------------------
 # Great-circle setup
+# -------------------------
 geod = Geod(ellps="WGS84")
 @st.cache_data
 def load_data():
@@ -17,7 +19,9 @@ def load_data():
     return trade_df
 trade_df = load_data()
 
+# -------------------------
 # World shapefile
+# -------------------------
 world = gpd.read_file("shapefiles/ne_110m_admin_0_countries.shp")
 world_proj = world.to_crs(epsg=3857)
 world["coords"] = world_proj.centroid.to_crs(world.crs)
@@ -28,7 +32,9 @@ def great_circle_points(src, tgt, npoints=50):
     lats = [src.y] + [p[1] for p in points] + [tgt.y]
     return lons, lats
 
+# -------------------------
 # Short format
+# -------------------------
 def short_fmt(val):
     if val >= 1e6:
         return f"{val/1e6:.1f}M"
@@ -37,7 +43,9 @@ def short_fmt(val):
     else:
         return f"{val:.0f}"
 
+# -------------------------
 # Map Plot
+# -------------------------
 def plot_trade_flow(year_selected, category_selected, crop_selected, source_selected, target_selected):
     df = trade_df[
         (trade_df["Year"] == year_selected) &
@@ -86,7 +94,9 @@ def plot_trade_flow(year_selected, category_selected, crop_selected, source_sele
     plt.title(f"{source_selected}: {crop_selected} ({category_selected}) Exports ({year_selected})", fontsize=13)
     st.pyplot(fig)
 
+# -------------------------
 # Sankey Export
+# -------------------------
 def plot_export_sankey(df, source_country, year, crop, category, threshold=0.01):
     df_filtered = df[
         (df["Year"] == year) &
@@ -111,53 +121,53 @@ def plot_export_sankey(df, source_country, year, crop, category, threshold=0.01)
     target_colors = {imp: palette[i % len(palette)] for i, imp in enumerate(importers)}
     node_colors = ["#636efa" if node in exporters else target_colors[node] for node in all_nodes]
     link_colors = [target_colors[t] for t in df_filtered["target"]]
-    node_x = [0.22 if node in exporters else 0.62 for node in all_nodes]
-    node_y = np.linspace(0.05, 0.95, len(all_nodes))
     sources = df_filtered["source"].map(node_map)
     targets = df_filtered["target"].map(node_map)
     values = df_filtered["weight_n"]
+
     sankey_fig = go.Figure(data=[go.Sankey(
         arrangement="snap", orientation="h",
         node=dict(
-            pad=22, thickness=20, line=dict(color="#222", width=1.5),
+            pad=24, thickness=20, line=dict(color="#333", width=1.7),
             label=[f"{node}" for node in all_nodes],
-            color=node_colors, x=node_x, y=node_y,
-            hovertemplate='%{label}',
+            color=node_colors
         ),
         link=dict(
             source=sources, target=targets, value=values, color=link_colors,
             hovertemplate=(
-                'Exporter: %{source.label}<br>'+
-                'Importer: %{target.label}<br>'+
-                'Value: %{value:,.0f} kg N<br>'+
-                f'Year: {year}<br>Crop: {crop}<br>Category: {category}'
+                '<b>Exporter:</b> %{source.label}<br>'+
+                '<b>Importer:</b> %{target.label}<br>'+
+                '<b>Value:</b> %{value:,.0f} kg N<br>'+
+                f'<b>Year:</b> {year}<br><b>Crop:</b> {crop}<br><b>Category:</b> {category}'
             ),
         )
     )])
+    # Clean external value annotation
     exporter_total = df_filtered["weight_n"].sum()
     importer_totals = df_filtered.groupby("target")["weight_n"].sum().to_dict()
     for i, node in enumerate(all_nodes):
-        x_pos, y_pos = node_x[i], node_y[i]
+        y = None  # Let Plotly auto-place annotation vertically at node center
         if node in exporters:
-            offset, align = 8, "left"
-            text = f"{node} ({short_fmt(exporter_total)} kg N)"
+            x, align, text = 0, "left", f"{node} ({short_fmt(exporter_total)} kg N)"
         else:
-            offset, align = -8, "right"
-            text = f"{node} ({short_fmt(importer_totals.get(node, 0))} kg N)"
+            x, align, text = 1, "right", f"{node} ({short_fmt(importer_totals.get(node, 0))} kg N)"
         sankey_fig.add_annotation(
-            x=x_pos, y=y_pos, xshift=offset, text=text,
-            showarrow=False, font=dict(size=12, color="#222"),
-            align=align, xanchor=align, yanchor="middle"
+            x=x, y=None, text=text, showarrow=False,
+            font=dict(size=15, color="#111"),
+            align=align, xanchor=align, yanchor="middle",
+            xref="paper", yref="paper"
         )
     sankey_fig.update_layout(
         title_text=f"<b>📤 {source_country}: {crop} ({category}) Exports Sankey {year}</b>",
-        font=dict(family="Open Sans, Arial", size=13, color="#222"),
-        plot_bgcolor="#f8f9fa", paper_bgcolor="#f8f9fa",
-        margin=dict(l=20, r=20, t=60, b=20), height=640
+        font=dict(family="Open Sans, Arial", size=14, color="#222"),
+        plot_bgcolor="#fff", paper_bgcolor="#fff",
+        margin=dict(l=20, r=20, t=60, b=40), height=600
     )
     st.plotly_chart(sankey_fig, use_container_width=True)
 
+# -------------------------
 # Sankey Import
+# -------------------------
 def plot_import_sankey(df, target_country, year, crop, category, threshold=0.01):
     df_filtered = df[
         (df["Year"] == year) &
@@ -182,53 +192,53 @@ def plot_import_sankey(df, target_country, year, crop, category, threshold=0.01)
     source_colors = {src: palette[i % len(palette)] for i, src in enumerate(exporters)}
     node_colors = [source_colors[node] if node in exporters else "#0ed6c1" for node in all_nodes]
     link_colors = [source_colors[s] for s in df_filtered["source"]]
-    node_x = [0.22 if node in exporters else 0.62 for node in all_nodes]
-    node_y = np.linspace(0.05, 0.95, len(all_nodes))
     sources = df_filtered["source"].map(node_map)
     targets = df_filtered["target"].map(node_map)
     values = df_filtered["weight_n"]
+
     sankey_fig = go.Figure(data=[go.Sankey(
         arrangement="snap", orientation="h",
         node=dict(
-            pad=22, thickness=20, line=dict(color="#222", width=1.5),
+            pad=24, thickness=20, line=dict(color="#333", width=1.7),
             label=[f"{node}" for node in all_nodes],
-            color=node_colors, x=node_x, y=node_y,
-            hovertemplate='%{label}',
+            color=node_colors
         ),
         link=dict(
             source=sources, target=targets, value=values, color=link_colors,
             hovertemplate=(
-                'Exporter: %{source.label}<br>'+
-                'Importer: %{target.label}<br>'+
-                'Value: %{value:,.0f} kg N<br>'+
-                f'Year: {year}<br>Crop: {crop}<br>Category: {category}'
+                '<b>Exporter:</b> %{source.label}<br>'+
+                '<b>Importer:</b> %{target.label}<br>'+
+                '<b>Value:</b> %{value:,.0f} kg N<br>'+
+                f'<b>Year:</b> {year}<br><b>Crop:</b> {crop}<br><b>Category:</b> {category}'
             ),
         )
     )])
+    # Clean external value annotation
     importer_total = df_filtered["weight_n"].sum()
     exporter_totals = df_filtered.groupby("source")["weight_n"].sum().to_dict()
     for i, node in enumerate(all_nodes):
-        x_pos, y_pos = node_x[i], node_y[i]
+        y = None
         if node in exporters:
-            offset, align = 8, "left"
-            text = f"{node} ({short_fmt(exporter_totals.get(node, 0))} kg N)"
+            x, align, text = 0, "left", f"{node} ({short_fmt(exporter_totals.get(node, 0))} kg N)"
         else:
-            offset, align = -8, "right"
-            text = f"{node} ({short_fmt(importer_total)} kg N)"
+            x, align, text = 1, "right", f"{node} ({short_fmt(importer_total)} kg N)"
         sankey_fig.add_annotation(
-            x=x_pos, y=y_pos, xshift=offset, text=text,
-            showarrow=False, font=dict(size=12, color="#222"),
-            align=align, xanchor=align, yanchor="middle"
+            x=x, y=None, text=text, showarrow=False,
+            font=dict(size=15, color="#111"),
+            align=align, xanchor=align, yanchor="middle",
+            xref="paper", yref="paper"
         )
     sankey_fig.update_layout(
         title_text=f"<b>📥 {target_country}: {crop} ({category}) Imports Sankey {year}</b>",
-        font=dict(family="Open Sans, Arial", size=13, color="#222"),
-        plot_bgcolor="#f8f9fa", paper_bgcolor="#f8f9fa",
-        margin=dict(l=20, r=20, t=60, b=20), height=640
+        font=dict(family="Open Sans, Arial", size=14, color="#222"),
+        plot_bgcolor="#fff", paper_bgcolor="#fff",
+        margin=dict(l=20, r=20, t=60, b=40), height=600
     )
     st.plotly_chart(sankey_fig, use_container_width=True)
 
+# -------------------------
 # Sidebar
+# -------------------------
 st.sidebar.header("Filters")
 year_selected = st.sidebar.selectbox("Year", sorted(trade_df["Year"].unique()), index=0)
 category_selected = st.sidebar.selectbox("Category", sorted(trade_df["Category"].dropna().unique()))
@@ -238,7 +248,9 @@ default_index = countries_sorted.index("India") if "India" in countries_sorted e
 source_selected = st.sidebar.selectbox("Country", countries_sorted, index=default_index)
 target_selected = st.sidebar.selectbox("Importing Country", ["All countries"] + sorted(trade_df["Target_Countries"].unique()))
 
+# -------------------------
 # Main Page
+# -------------------------
 st.header("🌍 Virtual N Global Trade Flow")
 plot_trade_flow(year_selected, category_selected, crop_selected, source_selected, target_selected)
 st.subheader("📤 Export Flows")
